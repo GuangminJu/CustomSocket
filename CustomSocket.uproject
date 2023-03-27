@@ -1,0 +1,13 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "{8F954ED6-453C-1501-50C9-1A908588D946}",
+	"Category": "",
+	"Description": "",
+	"Modules": [
+		{
+			"Name": "CustomSocket",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
