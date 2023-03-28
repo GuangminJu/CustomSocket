@@ -16,73 +16,24 @@ const FName CustomSocketEditorAppIdentifier = FName(TEXT("CustomSocketEditorApp"
 
 BEGIN_SLATE_FUNCTION_BUILD_OPTIMIZATION
 
-class ICustomSocketToolkitHost : public SCompoundWidget, public IToolkitHost
-{
-public:
-	explicit ICustomSocketToolkitHost(UWorld* const World);
-	virtual TSharedRef<SWidget> GetParentWidget() override;
-	virtual void BringToFront() override;
-	virtual TSharedRef<SDockTabStack> GetTabSpot(const EToolkitTabSpot::Type TabSpot) override;
-	virtual TSharedPtr<FTabManager> GetTabManager() const override;
-	virtual void OnToolkitHostingStarted(const TSharedRef<IToolkit>& Toolkit) override;
-	virtual void OnToolkitHostingFinished(const TSharedRef<IToolkit>& Toolkit) override;
-	virtual UWorld* GetWorld() const override;
-
-private:
-	UWorld* World;
-};
-
-ICustomSocketToolkitHost::ICustomSocketToolkitHost(UWorld* const World): World(World)
-{
-}
-
-TSharedRef<SWidget> ICustomSocketToolkitHost::GetParentWidget()
-{
-	return AsShared();
-}
-
-void ICustomSocketToolkitHost::BringToFront()
-{
-}
-
-TSharedRef<SDockTabStack> ICustomSocketToolkitHost::GetTabSpot(const EToolkitTabSpot::Type TabSpot)
-{
-	return TSharedPtr<SDockTabStack>().ToSharedRef();
-}
-
-TSharedPtr<FTabManager> ICustomSocketToolkitHost::GetTabManager() const
-{
-	const FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>("LevelEditor");
-	TSharedPtr<FTabManager> LevelEditorTabManager = LevelEditorModule.GetLevelEditorTabManager();
-	return LevelEditorTabManager;
-}
-
-UWorld* ICustomSocketToolkitHost::GetWorld() const
-{
-	return World;
-}
-
-void ICustomSocketToolkitHost::OnToolkitHostingStarted(const TSharedRef<IToolkit>& Toolkit)
-{
-}
-
-void ICustomSocketToolkitHost::OnToolkitHostingFinished(const TSharedRef<IToolkit>& Toolkit)
-{
-}
-
-FStaticMeshSocketEditor::FStaticMeshSocketEditor(const FLinearColor& WorldCentricTabColorScale,
-                                                 const TWeakObjectPtr<UStaticMesh>& StaticMesh,
-                                                 const TWeakObjectPtr<UStaticMeshComponent>& StaticMeshComponent,
-                                                 const TArray<TWeakObjectPtr<UStaticMeshSocket>>& SelectedSockets,
+FStaticMeshSocketEditor::FStaticMeshSocketEditor(const FLinearColor& InWorldCentricTabColorScale,
+                                                 const TWeakObjectPtr<UStaticMesh>& InStaticMesh,
+                                                 const TWeakObjectPtr<UStaticMeshComponent>& InStaticMeshComponent,
+                                                 const TArray<TWeakObjectPtr<UStaticMeshSocket>>& InSelectedSockets,
                                                  const bool InMutlipleSelect,
                                                  const EViewModeIndex ViewMode):
-	WorldCentricTabColorScale(WorldCentricTabColorScale),
-	StaticMesh(StaticMesh),
-	StaticMeshComponent(StaticMeshComponent),
-	SelectedSockets(SelectedSockets),
+	WorldCentricTabColorScale(InWorldCentricTabColorScale),
+	StaticMesh(InStaticMesh),
+	StaticMeshComponent(InStaticMeshComponent),
+	SelectedSockets(InSelectedSockets),
 	MutlipleSelect(InMutlipleSelect),
 	ViewMode(ViewMode)
 {
+	for (TObjectIterator<UStaticMesh> It; It; ++It)
+	{
+		StaticMesh = *It;
+		break;
+	}
 }
 
 void FStaticMeshSocketEditor::InitSocketEditor()
@@ -91,20 +42,25 @@ void FStaticMeshSocketEditor::InitSocketEditor()
 		->AddArea
 		(
 			FTabManager::NewPrimaryArea()
+			->SetOrientation(Orient_Horizontal)
 			->Split
 			(
 				FTabManager::NewStack()
-				->AddTab("Socket Edit", ETabState::OpenedTab)
+				->AddTab(CustomSocketEditorViewportTabId, ETabState::OpenedTab)
+				->AddTab(CustomSocketEditorStaticMeshPickerTabId, ETabState::OpenedTab)
 			)
 		);
 
-	FAssetEditorToolkit::InitAssetEditor(EToolkitMode::Standalone, CustomSocketToolkitHost,
+	FAssetEditorToolkit::InitAssetEditor(EToolkitMode::Standalone, nullptr,
 	                                     CustomSocketEditorAppIdentifier,
-	                                     DefaultLayout, false, false,
+	                                     DefaultLayout, true, true,
 	                                     StaticMesh.Get());
 }
 
-const FName FStaticMeshSocketEditor::CustomSocketEditorTabId(TEXT("StaticMeshEditor_CustomSocketEditor"));
+const FName FStaticMeshSocketEditor::CustomSocketEditorViewportTabId(
+	TEXT("CustomSocketEditor_CustomSocketEditorViewport"));
+const FName FStaticMeshSocketEditor::CustomSocketEditorStaticMeshPickerTabId(
+	TEXT("CustomSocketEditor_CustomSocketEditorStaticMeshPickerTabId"));
 
 void FStaticMeshSocketEditor::RegisterTabSpawners(const TSharedRef<FTabManager>& InTabManager)
 {
@@ -114,33 +70,47 @@ void FStaticMeshSocketEditor::RegisterTabSpawners(const TSharedRef<FTabManager>&
 
 	FAssetEditorToolkit::RegisterTabSpawners(InTabManager);
 
-	InTabManager->RegisterTabSpawner(CustomSocketEditorTabId,
-	                                 FOnSpawnTab::CreateSP(this, &FStaticMeshSocketEditor::SpawnTab_CustomSocketEditor))
-	            .SetDisplayName(LOCTEXT("CustomSocketEditorTab", "Custom Socket Editor"))
-	            .SetGroup(WorkspaceMenuCategoryRef)
-	            .SetIcon(FSlateIcon(FEditorStyle::GetStyleSetName(), "LevelEditor.Tabs.Viewports"));
+	InTabManager->RegisterTabSpawner(CustomSocketEditorViewportTabId,
+	                                 FOnSpawnTab::CreateSP(
+		                                 this, &FStaticMeshSocketEditor::SpawnTab_CustomSocketEditorViewport));
 
+	InTabManager->RegisterTabSpawner(CustomSocketEditorStaticMeshPickerTabId,
+	                                 FOnSpawnTab::CreateSP(
+		                                 this, &FStaticMeshSocketEditor::SpawnTab_CustomSocketEditorStaticMeshPicker));
 }
 
-TSharedRef<SDockTab> FStaticMeshSocketEditor::SpawnTab_CustomSocketEditor(const FSpawnTabArgs& Args)
+TSharedRef<SDockTab> FStaticMeshSocketEditor::SpawnTab_CustomSocketEditorViewport(const FSpawnTabArgs& Args)
 {
 	return SNew(SDockTab)
 		.TabRole(ETabRole::NomadTab)
 		[
-			SNew(SCustomSocketEditorWidget)
+			SNew(SCustomSocketEditorWidget).StaticMesh(StaticMesh.Get()).SeatMap(SeatMap)
 		];
 }
 
-FStaticMeshSocketEditor::FStaticMeshSocketEditor(UWorld* InWorld):
+TSharedRef<SDockTab> FStaticMeshSocketEditor::SpawnTab_CustomSocketEditorStaticMeshPicker(const FSpawnTabArgs& Args)
+{
+	IStaticMeshEditorModule* StaticMeshEditorModule = &FModuleManager::LoadModuleChecked<IStaticMeshEditorModule>(
+		"StaticMeshEditor");
+	const TSharedRef<IStaticMeshEditor> StaticMeshEditor = StaticMeshEditorModule->CreateStaticMeshEditor(
+		EToolkitMode::Standalone, nullptr, StaticMesh.Get());
+
+	return SNew(SDockTab)
+		.TabRole(ETabRole::NomadTab)
+		[
+			SNew(SCustomSocketManager).StaticMeshEditorPtr(StaticMeshEditor).SeatMap(SeatMap)
+		];
+}
+
+FStaticMeshSocketEditor::FStaticMeshSocketEditor(USeatMap* InSeatMap, UWorld* InWorld):
 	StaticMesh(nullptr),
 	StaticMeshComponent(nullptr),
 	SelectedSockets(),
 	MutlipleSelect(false),
 	ViewMode(EViewModeIndex::VMI_Lit),
-	World(InWorld)
+	World(InWorld),
+	SeatMap(InSeatMap)
 {
-	CustomSocketToolkitHost = MakeShared<ICustomSocketToolkitHost>(World);
-
 	for (TObjectIterator<UStaticMesh> It; It; ++It)
 	{
 		StaticMesh = *It;
@@ -173,32 +143,16 @@ FString FStaticMeshSocketEditor::GetWorldCentricTabPrefix() const
 
 void SCustomSocketEditorWidget::Construct(const FArguments& InArgs)
 {
+	StaticMesh = InArgs._StaticMesh;
+	SeatMap = InArgs._SeatMap;
+
 	PreviewScene = MakeShareable(new FAdvancedPreviewScene(FPreviewScene::ConstructionValues()));
-
-	for (TObjectIterator<UStaticMesh> It; It; ++It)
-	{
-		StaticMesh = *It;
-		break;
-	}
-
 	StaticMeshComponent = NewObject<UStaticMeshComponent>(GetTransientPackage(), NAME_None, RF_Transient);
 	StaticMeshComponent->SetStaticMesh(StaticMesh);
-	
-	const TSharedPtr<ISocketManager> SocketManager = MakeShared<SCustomSocketManager>();
+
+	PreviewScene->AddComponent(StaticMeshComponent, FTransform::Identity);
+
 	SEditorViewport::Construct(SEditorViewport::FArguments());
-	
-	ChildSlot
-	[
-		SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot()
-		[
-			ViewportWidget.ToSharedRef()
-		]
-		+ SHorizontalBox::Slot()
-		[
-			SocketManager.ToSharedRef()
-		]
-	];
 }
 
 SCustomSocketEditorWidget::SCustomSocketEditorWidget()
@@ -217,6 +171,7 @@ SCustomSocketEditorWidget::~SCustomSocketEditorWidget()
 void SCustomSocketEditorWidget::AddReferencedObjects(FReferenceCollector& Collector)
 {
 	Collector.AddReferencedObject(StaticMesh);
+	Collector.AddReferencedObject(SeatMap);
 }
 
 TSharedRef<SEditorViewport> SCustomSocketEditorWidget::GetViewportWidget()
@@ -238,6 +193,12 @@ TSharedRef<FEditorViewportClient> SCustomSocketEditorWidget::MakeEditorViewportC
 {
 	EditorViewportClient = MakeShareable(new FEditorViewportClient(nullptr, PreviewScene.Get(), SharedThis(this)));
 	return EditorViewportClient.ToSharedRef();
+}
+
+void SCustomSocketEditorWidget::SetStaticMesh(UStaticMesh* InStaticMesh)
+{
+	StaticMesh = InStaticMesh;
+	StaticMeshComponent->SetStaticMesh(StaticMesh);
 }
 
 void SCustomSocketEditorWidget::OnSocketSelectionChanged()

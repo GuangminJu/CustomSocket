@@ -10,12 +10,14 @@
 
 class FStaticMeshSocketEditor;
 class ICustomSocketToolkitHost;
+class USeatMap;
 
 class CUSTOMSOCKETEDITOR_API SCustomSocketEditorWidget : public SAssetEditorViewport, public FGCObject, public ICommonEditorViewportToolbarInfoProvider
 {
 public:
 	SLATE_BEGIN_ARGS(SCustomSocketEditorWidget) {}
-		SLATE_ARGUMENT(TWeakPtr<IStaticMeshEditor>, StaticMeshEditor)
+		SLATE_ARGUMENT(UStaticMesh*, StaticMesh)
+		SLATE_ARGUMENT(USeatMap*, SeatMap)
 	SLATE_END_ARGS()
 
 	/** Constructs this widget with InArgs */
@@ -30,6 +32,7 @@ public:
 	virtual void OnFloatingButtonClicked() override;
 	virtual TSharedRef<FEditorViewportClient> MakeEditorViewportClient() override;
 
+	void SetStaticMesh(UStaticMesh* InStaticMesh);
 	void OnSocketSelectionChanged();
 private:
 	TSharedPtr<FEditorViewportClient> EditorViewportClient;
@@ -39,19 +42,22 @@ private:
 	int32 LODSelection;
 	UStaticMeshComponent* StaticMeshComponent;
 	TSharedPtr<FStaticMeshSocketEditor> SocketEditor;
+	USeatMap* SeatMap = nullptr;
 };
+
+class USeatMap;
 
 class FStaticMeshSocketEditor : public FAssetEditorToolkit
 {
 public:
-	FStaticMeshSocketEditor(const FLinearColor& WorldCentricTabColorScale,
-							const TWeakObjectPtr<UStaticMesh>& StaticMesh,
-							const TWeakObjectPtr<UStaticMeshComponent>& StaticMeshComponent,
-							const TArray<TWeakObjectPtr<UStaticMeshSocket>>& SelectedSockets,
+	FStaticMeshSocketEditor(const FLinearColor& InWorldCentricTabColorScale,
+							const TWeakObjectPtr<UStaticMesh>& InStaticMesh,
+							const TWeakObjectPtr<UStaticMeshComponent>& InStaticMeshComponent,
+							const TArray<TWeakObjectPtr<UStaticMeshSocket>>& InSelectedSockets,
 							const bool InMutlipleSelect,
 							const EViewModeIndex ViewMode);
 
-	FStaticMeshSocketEditor(UWorld* InWorld);
+	FStaticMeshSocketEditor(USeatMap* InSeatMap, UWorld* InWorld);
 
 	virtual FLinearColor GetWorldCentricTabColorScale() const override;
 	virtual FName GetToolkitFName() const override;
@@ -61,9 +67,11 @@ public:
 
 	virtual void RegisterTabSpawners(const TSharedRef<FTabManager>& InTabManager) override;
 
-	TSharedRef<SDockTab> SpawnTab_CustomSocketEditor(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnTab_CustomSocketEditorViewport(const FSpawnTabArgs& Args);
+	TSharedRef<SDockTab> SpawnTab_CustomSocketEditorStaticMeshPicker(const FSpawnTabArgs& Args);
 
-	static const FName CustomSocketEditorTabId;
+	static const FName CustomSocketEditorViewportTabId;
+	static const FName CustomSocketEditorStaticMeshPickerTabId;
 private:
 	FLinearColor WorldCentricTabColorScale;
 	TWeakObjectPtr<UStaticMesh> StaticMesh;
@@ -72,5 +80,5 @@ private:
 	bool MutlipleSelect = false;
 	EViewModeIndex ViewMode = VMI_Lit;
 	UWorld* World = nullptr;
-	TSharedPtr<ICustomSocketToolkitHost, ESPMode::NotThreadSafe> CustomSocketToolkitHost;
+	USeatMap* SeatMap = nullptr;
 };

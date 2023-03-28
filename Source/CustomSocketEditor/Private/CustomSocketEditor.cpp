@@ -1,6 +1,9 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "CustomSocketEditor.h"
+
+#include "AssetToolsModule.h"
+#include "AssetTypeAction_SeatMap.h"
 #include "CustomSocketEditorStyle.h"
 #include "CustomSocketEditorCommands.h"
 #include "LevelEditor.h"
@@ -11,6 +14,8 @@
 #include "Widgets/SCustomSocketManager.h"
 
 static const FName CustomSocketEditorTabName("CustomSocketEditorTabTitle");
+
+EAssetTypeCategories::Type FCustomSocketEditorModule::BYCAssetCategoryBit;
 
 #define LOCTEXT_NAMESPACE "FCustomSocketEditorModule"
 
@@ -33,28 +38,10 @@ void FCustomSocketEditorModule::StartupModule()
 	UToolMenus::RegisterStartupCallback(
 		FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FCustomSocketEditorModule::RegisterMenus));
 
-	{
-		FLevelEditorModule& LevelEditorModule = FModuleManager::LoadModuleChecked<FLevelEditorModule>("LevelEditor");
-		TSharedPtr<FExtender> ToolbarExtender = MakeShareable(new FExtender);
-		
-		ToolbarExtender->AddToolBarExtension(CustomSocketEditorTabName, EExtensionHook::First, PluginCommands,
-		                                     FToolBarExtensionDelegate::CreateLambda(
-			                                     [this](class FToolBarBuilder& ToolbarBuilder)
-			                                     {
-				                                     FUIAction Action;
-				                                     Action.ExecuteAction.BindRaw(
-					                                     this, &FCustomSocketEditorModule::SpawnCustomSocketEditor);
-				                                     ToolbarBuilder.AddToolBarButton(
-					                                     Action, NAME_None,
-					                                     LOCTEXT("CustomSocketEditor", "Custom Socket Editor"),
-					                                     LOCTEXT("CustomSocketEditorTooltip",
-					                                             "Open Custom Socket Editor"),
-					                                     FSlateIcon(FEditorStyle::GetStyleSetName(),
-					                                                "LevelEditor.Tabs.Details"));
-			                                     }));
+	IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
 
-		LevelEditorModule.GetToolBarExtensibilityManager()->AddExtender(ToolbarExtender);
-	}
+	BYCAssetCategoryBit = AssetTools.RegisterAdvancedAssetCategory(FName(TEXT("BYC")), LOCTEXT("BYCAssetCategory", "BYC"));
+	AssetTools.RegisterAssetTypeActions(MakeShared<FAssetTypeActions_SeatMap>());
 }
 
 void FCustomSocketEditorModule::ShutdownModule()
@@ -75,8 +62,7 @@ void FCustomSocketEditorModule::ShutdownModule()
 
 void FCustomSocketEditorModule::SpawnCustomSocketEditor()
 {
-	TSharedPtr<FStaticMeshSocketEditor> SocketEditor = MakeShared<FStaticMeshSocketEditor>(GEngine->GetWorld());
-	SocketEditor->InitSocketEditor();
+	
 }
 
 void FCustomSocketEditorModule::PluginButtonClicked()
@@ -84,7 +70,7 @@ void FCustomSocketEditorModule::PluginButtonClicked()
 	SpawnCustomSocketEditor();
 }
 
-TSharedPtr<ISocketManager> FCustomSocketEditorModule::CreateSocketManager(
+TSharedPtr<SCompoundWidget> FCustomSocketEditorModule::CreateSocketManager(
 	TSharedPtr<IStaticMeshEditor> InStaticMeshEditor, FSimpleDelegate InOnSocketSelectionChanged)
 {
 	TSharedPtr<SCustomSocketManager> SocketManager;
@@ -92,8 +78,7 @@ TSharedPtr<ISocketManager> FCustomSocketEditorModule::CreateSocketManager(
 		.StaticMeshEditorPtr(InStaticMeshEditor)
 		.OnSocketSelectionChanged(InOnSocketSelectionChanged);
 
-	TSharedPtr<ISocketManager> ISocket = StaticCastSharedPtr<ISocketManager>(SocketManager);
-	return ISocket;
+	return SocketManager;
 }
 
 void FCustomSocketEditorModule::RegisterMenus()
