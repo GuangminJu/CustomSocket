@@ -8,8 +8,9 @@
 #include "Widgets/Layout/SBox.h"
 #include "ToolMenus.h"
 #include "Widgets/SCustomSocketEditorWidget.h"
+#include "Widgets/SCustomSocketManager.h"
 
-static const FName CustomSocketEditorTabName("CustomSocketEditor");
+static const FName CustomSocketEditorTabName("CustomSocketEditorTabTitle");
 
 #define LOCTEXT_NAMESPACE "FCustomSocketEditorModule"
 
@@ -32,11 +33,28 @@ void FCustomSocketEditorModule::StartupModule()
 	UToolMenus::RegisterStartupCallback(
 		FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FCustomSocketEditorModule::RegisterMenus));
 
-	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(CustomSocketEditorTabName,
-	                                                  FOnSpawnTab::CreateRaw(
-		                                                  this, &FCustomSocketEditorModule::OnSpawnPluginTab))
-	                        .SetDisplayName(LOCTEXT("FCustomSocketEditorTabTitle", "CustomSocketEditor"))
-	                        .SetMenuType(ETabSpawnerMenuType::Hidden);
+	{
+		FLevelEditorModule& LevelEditorModule = FModuleManager::LoadModuleChecked<FLevelEditorModule>("LevelEditor");
+		TSharedPtr<FExtender> ToolbarExtender = MakeShareable(new FExtender);
+		
+		ToolbarExtender->AddToolBarExtension(CustomSocketEditorTabName, EExtensionHook::First, PluginCommands,
+		                                     FToolBarExtensionDelegate::CreateLambda(
+			                                     [this](class FToolBarBuilder& ToolbarBuilder)
+			                                     {
+				                                     FUIAction Action;
+				                                     Action.ExecuteAction.BindRaw(
+					                                     this, &FCustomSocketEditorModule::SpawnCustomSocketEditor);
+				                                     ToolbarBuilder.AddToolBarButton(
+					                                     Action, NAME_None,
+					                                     LOCTEXT("CustomSocketEditor", "Custom Socket Editor"),
+					                                     LOCTEXT("CustomSocketEditorTooltip",
+					                                             "Open Custom Socket Editor"),
+					                                     FSlateIcon(FEditorStyle::GetStyleSetName(),
+					                                                "LevelEditor.Tabs.Details"));
+			                                     }));
+
+		LevelEditorModule.GetToolBarExtensibilityManager()->AddExtender(ToolbarExtender);
+	}
 }
 
 void FCustomSocketEditorModule::ShutdownModule()
@@ -55,24 +73,27 @@ void FCustomSocketEditorModule::ShutdownModule()
 	FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(CustomSocketEditorTabName);
 }
 
-TSharedRef<SDockTab> FCustomSocketEditorModule::OnSpawnPluginTab(const FSpawnTabArgs& SpawnTabArgs)
+void FCustomSocketEditorModule::SpawnCustomSocketEditor()
 {
-	FText WidgetText = FText::Format(
-		LOCTEXT("WindowWidgetText", "Add code to {0} in {1} to override this window's contents"),
-		FText::FromString(TEXT("FCustomSocketEditorModule::OnSpawnPluginTab")),
-		FText::FromString(TEXT("CustomSocketEditor.cpp"))
-	);
-
-	return SNew(SDockTab)
-		.TabRole(ETabRole::NomadTab)
-		[
-			SNew(SCustomSocketEditorWidget)
-		];
+	TSharedPtr<FStaticMeshSocketEditor> SocketEditor = MakeShared<FStaticMeshSocketEditor>(GEngine->GetWorld());
+	SocketEditor->InitSocketEditor();
 }
 
 void FCustomSocketEditorModule::PluginButtonClicked()
 {
-	FGlobalTabmanager::Get()->TryInvokeTab(CustomSocketEditorTabName);
+	SpawnCustomSocketEditor();
+}
+
+TSharedPtr<ISocketManager> FCustomSocketEditorModule::CreateSocketManager(
+	TSharedPtr<IStaticMeshEditor> InStaticMeshEditor, FSimpleDelegate InOnSocketSelectionChanged)
+{
+	TSharedPtr<SCustomSocketManager> SocketManager;
+	SAssignNew(SocketManager, SCustomSocketManager)
+		.StaticMeshEditorPtr(InStaticMeshEditor)
+		.OnSocketSelectionChanged(InOnSocketSelectionChanged);
+
+	TSharedPtr<ISocketManager> ISocket = StaticCastSharedPtr<ISocketManager>(SocketManager);
+	return ISocket;
 }
 
 void FCustomSocketEditorModule::RegisterMenus()
