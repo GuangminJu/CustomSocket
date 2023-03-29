@@ -70,17 +70,6 @@ void FCustomSocketEditorModule::PluginButtonClicked()
 	SpawnCustomSocketEditor();
 }
 
-TSharedPtr<SCompoundWidget> FCustomSocketEditorModule::CreateSocketManager(
-	TSharedPtr<IStaticMeshEditor> InStaticMeshEditor, FSimpleDelegate InOnSocketSelectionChanged)
-{
-	TSharedPtr<SCustomSocketManager> SocketManager;
-	SAssignNew(SocketManager, SCustomSocketManager)
-		.StaticMeshEditorPtr(InStaticMeshEditor)
-		.OnSocketSelectionChanged(InOnSocketSelectionChanged);
-
-	return SocketManager;
-}
-
 void FCustomSocketEditorModule::RegisterMenus()
 {
 	// Owner will be used for cleanup in call to UToolMenus::UnregisterOwner

@@ -9,6 +9,7 @@
 #include "SCustomSocketManager.h"
 #include "SlateOptMacros.h"
 #include "StaticMeshEditorModule.h"
+#include "PropertyCustomizationHelpers.h"
 
 #define LOCTEXT_NAMESPACE "SocketEditor"
 
@@ -57,6 +58,18 @@ void FStaticMeshSocketEditor::InitSocketEditor()
 	                                     StaticMesh.Get());
 }
 
+void FStaticMeshSocketEditor::SetStaticMesh(UStaticMesh* InStaticMesh)
+{
+	StaticMesh = InStaticMesh;
+	StaticMeshComponent->SetStaticMesh(StaticMesh.Get());
+	OnStaticMeshChanged.Broadcast(StaticMesh.Get());
+}
+
+UStaticMesh* FStaticMeshSocketEditor::GetStaticMesh() const
+{
+	return StaticMesh.Get();
+}
+
 const FName FStaticMeshSocketEditor::CustomSocketEditorViewportTabId(
 	TEXT("CustomSocketEditor_CustomSocketEditorViewport"));
 const FName FStaticMeshSocketEditor::CustomSocketEditorStaticMeshPickerTabId(
@@ -84,21 +97,17 @@ TSharedRef<SDockTab> FStaticMeshSocketEditor::SpawnTab_CustomSocketEditorViewpor
 	return SNew(SDockTab)
 		.TabRole(ETabRole::NomadTab)
 		[
-			SNew(SCustomSocketEditorWidget).StaticMesh(StaticMesh.Get()).SeatMap(SeatMap)
+			SNew(SCustomSocketEditorWidget).StaticMesh(StaticMesh.Get()).SeatMap(SeatMap).StaticMeshSocketEditor(
+				SharedThis(this))
 		];
 }
 
 TSharedRef<SDockTab> FStaticMeshSocketEditor::SpawnTab_CustomSocketEditorStaticMeshPicker(const FSpawnTabArgs& Args)
 {
-	IStaticMeshEditorModule* StaticMeshEditorModule = &FModuleManager::LoadModuleChecked<IStaticMeshEditorModule>(
-		"StaticMeshEditor");
-	const TSharedRef<IStaticMeshEditor> StaticMeshEditor = StaticMeshEditorModule->CreateStaticMeshEditor(
-		EToolkitMode::Standalone, nullptr, StaticMesh.Get());
-
 	return SNew(SDockTab)
 		.TabRole(ETabRole::NomadTab)
 		[
-			SNew(SCustomSocketManager).StaticMeshEditorPtr(StaticMeshEditor).SeatMap(SeatMap)
+			SNew(SCustomSocketManager).SeatMap(SeatMap).StaticMeshSocketEditor(SharedThis(this))
 		];
 }
 
@@ -145,6 +154,7 @@ void SCustomSocketEditorWidget::Construct(const FArguments& InArgs)
 {
 	StaticMesh = InArgs._StaticMesh;
 	SeatMap = InArgs._SeatMap;
+	StaticMeshSocketEditor = InArgs._StaticMeshSocketEditor;
 
 	PreviewScene = MakeShareable(new FAdvancedPreviewScene(FPreviewScene::ConstructionValues()));
 	StaticMeshComponent = NewObject<UStaticMeshComponent>(GetTransientPackage(), NAME_None, RF_Transient);
@@ -153,6 +163,25 @@ void SCustomSocketEditorWidget::Construct(const FArguments& InArgs)
 	PreviewScene->AddComponent(StaticMeshComponent, FTransform::Identity);
 
 	SEditorViewport::Construct(SEditorViewport::FArguments());
+
+	ViewportOverlay->AddSlot()
+	[
+		SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.VAlign(VAlign_Top)
+		[
+			SNew(SObjectPropertyEntryBox).AllowedClass(UStaticMesh::StaticClass()).ObjectPath_Lambda([this]()
+			                             {
+				                             return StaticMesh ? StaticMesh->GetPathName() : FString();
+			                             })
+			                             .OnObjectChanged_Lambda([this](const FAssetData& AssetData)
+			                             {
+				                             SetStaticMesh(Cast<UStaticMesh>(AssetData.GetAsset()));
+			                             })
+		]
+	];
+
+	FCoreUObjectDelegates::OnObjectPropertyChanged.AddRaw(this, &SCustomSocketEditorWidget::OnObjectPropertyChanged);
 }
 
 SCustomSocketEditorWidget::SCustomSocketEditorWidget()
@@ -172,6 +201,7 @@ void SCustomSocketEditorWidget::AddReferencedObjects(FReferenceCollector& Collec
 {
 	Collector.AddReferencedObject(StaticMesh);
 	Collector.AddReferencedObject(SeatMap);
+	Collector.AddReferencedObjects(SeatPreviewComponents);
 }
 
 TSharedRef<SEditorViewport> SCustomSocketEditorWidget::GetViewportWidget()
@@ -199,10 +229,47 @@ void SCustomSocketEditorWidget::SetStaticMesh(UStaticMesh* InStaticMesh)
 {
 	StaticMesh = InStaticMesh;
 	StaticMeshComponent->SetStaticMesh(StaticMesh);
+	StaticMeshSocketEditor->SetStaticMesh(StaticMesh);
+	RebuildSeatPreviewComponents(SeatMap);
 }
 
 void SCustomSocketEditorWidget::OnSocketSelectionChanged()
 {
+}
+
+void SCustomSocketEditorWidget::RebuildSeatPreviewComponents(UObject* Object)
+{
+	if (Object != SeatMap)
+		return;
+
+	for (USeatPreviewComponent* SeatPreviewComponent : SeatPreviewComponents)
+	{
+		SeatPreviewComponent->DestroyComponent();
+	}
+	SeatPreviewComponents.Empty();
+
+	const FSeats& Seats = SeatMap->GetSeats(StaticMesh);
+	int32 SeatsCount = Seats.Seats.Num();
+
+	for (USeatSocket* SeatSocket : Seats.Seats)
+	{
+		USeatPreviewComponent* SeatPreviewComponent = NewObject<USeatPreviewComponent>(GetTransientPackage());
+		SeatPreviewComponent->SetSeatSocket(SeatSocket);
+		SeatPreviewComponents.Add(SeatPreviewComponent);
+	}
+
+	for (const USeatPreviewComponent* SeatPreviewComponent : SeatPreviewComponents)
+	{
+		PreviewScene->AddComponent(SeatPreviewComponent->GetPreviewComponent(), {
+			                           SeatPreviewComponent->SeatSocket->RelativeRotation,
+			                           SeatPreviewComponent->SeatSocket->RelativeLocation, FVector::OneVector
+		                           });
+	}
+}
+
+void SCustomSocketEditorWidget::OnObjectPropertyChanged(UObject* Object, FPropertyChangedEvent& PropertyChangedEvent)
+{
+	RebuildSeatPreviewComponents(Object);
 }
 
 END_SLATE_FUNCTION_BUILD_OPTIMIZATION

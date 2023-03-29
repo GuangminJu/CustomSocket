@@ -11,8 +11,8 @@
 #include "Widgets/Views/STableRow.h"
 #include "Widgets/Input/SSpinBox.h"
 #include "IDetailsView.h"
-#include "ISocketManager.h"
 #include "SeatSocket/SeatSocket.h"
+#include "Widgets/SCustomSocketEditorWidget.h"
 
 class IStaticMeshEditor;
 class UStaticMesh;
@@ -26,8 +26,7 @@ public:
 	SLATE_BEGIN_ARGS(SCustomSocketManager)
 		{
 		}
-
-		SLATE_ARGUMENT(TSharedPtr< IStaticMeshEditor >, StaticMeshEditorPtr)
+		SLATE_ARGUMENT(TSharedPtr<FStaticMeshSocketEditor>, StaticMeshSocketEditor)
 		SLATE_ARGUMENT(USeatMap*, SeatMap)
 		SLATE_EVENT(FSimpleDelegate, OnSocketSelectionChanged)
 	SLATE_END_ARGS()
@@ -62,6 +61,8 @@ private:
 	/**	Creates a socket with a specified name. */
 	void CreateSeatSocket();
 
+	void CopySeat();
+
 	/** Refreshes the socket list. */
 	void RefreshSocketList();
 
@@ -80,6 +81,7 @@ private:
 
 	/** Callback for the Create Socket button. */
 	FReply CreateSeatSocket_Execute();
+	FReply CopySeats_Execute();
 
 	FText GetSocketHeaderText() const;
 
@@ -99,6 +101,8 @@ private:
 	/** Callback when an item is scrolled into view, handling calls to rename items */
 	void OnItemScrolledIntoView(TSharedPtr<SocketListItem> InItem, const TSharedPtr<ITableRow>& InWidget);
 private:
+	void SetStaticMesh(UStaticMesh* InStaticMesh);
+	
 	/** Add a property change listener to each socket. */
 	void AddPropertyChangeListenerToSockets();
 
@@ -110,10 +114,7 @@ private:
 
 	/** Called when socket selection changes */
 	FSimpleDelegate OnSocketSelectionChanged;
-
-	/** Pointer back to the static mesh editor, used for */
-	TWeakPtr<IStaticMeshEditor> StaticMeshEditorPtr;
-
+	
 	/** Details panel for the selected socket. */
 	TSharedPtr<class IDetailsView> SocketDetailsView;
 
@@ -138,4 +139,6 @@ private:
 	TWeakPtr<SocketListItem> DeferredRenameRequest;
 
 	USeatMap* SeatMap;
+	
+	TSharedPtr<FStaticMeshSocketEditor> StaticMeshSocketEditor;
 };

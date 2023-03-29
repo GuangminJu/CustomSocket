@@ -7,17 +7,23 @@
 #include "IStaticMeshEditor.h"
 #include "SAssetEditorViewport.h"
 #include "SCommonEditorViewportToolbarBase.h"
+#include "SeatPreviewComponent.h"
 
 class FStaticMeshSocketEditor;
 class ICustomSocketToolkitHost;
 class USeatMap;
 
-class CUSTOMSOCKETEDITOR_API SCustomSocketEditorWidget : public SAssetEditorViewport, public FGCObject, public ICommonEditorViewportToolbarInfoProvider
+class CUSTOMSOCKETEDITOR_API SCustomSocketEditorWidget : public SAssetEditorViewport, public FGCObject,
+                                                         public ICommonEditorViewportToolbarInfoProvider
 {
 public:
-	SLATE_BEGIN_ARGS(SCustomSocketEditorWidget) {}
+	SLATE_BEGIN_ARGS(SCustomSocketEditorWidget)
+		{
+		}
+
 		SLATE_ARGUMENT(UStaticMesh*, StaticMesh)
 		SLATE_ARGUMENT(USeatMap*, SeatMap)
+		SLATE_ARGUMENT(TSharedPtr<FStaticMeshSocketEditor>, StaticMeshSocketEditor)
 	SLATE_END_ARGS()
 
 	/** Constructs this widget with InArgs */
@@ -25,7 +31,7 @@ public:
 
 	SCustomSocketEditorWidget();
 	virtual ~SCustomSocketEditorWidget() override;
-	
+
 	virtual void AddReferencedObjects(FReferenceCollector& Collector) override;
 	virtual TSharedRef<SEditorViewport> GetViewportWidget() override;
 	virtual TSharedPtr<FExtender> GetExtenders() const override;
@@ -34,6 +40,8 @@ public:
 
 	void SetStaticMesh(UStaticMesh* InStaticMesh);
 	void OnSocketSelectionChanged();
+	void RebuildSeatPreviewComponents(UObject* Object);
+	void OnObjectPropertyChanged(UObject* Object, FPropertyChangedEvent& PropertyChangedEvent);
 private:
 	TSharedPtr<FEditorViewportClient> EditorViewportClient;
 	TSharedPtr<FAdvancedPreviewScene> PreviewScene;
@@ -41,21 +49,24 @@ private:
 	EViewModeIndex CurrentViewMode;
 	int32 LODSelection;
 	UStaticMeshComponent* StaticMeshComponent;
-	TSharedPtr<FStaticMeshSocketEditor> SocketEditor;
+	TSharedPtr<FStaticMeshSocketEditor> StaticMeshSocketEditor;
 	USeatMap* SeatMap = nullptr;
+	TArray<USeatPreviewComponent*> SeatPreviewComponents;
 };
 
 class USeatMap;
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FStaticMeshChanged, UStaticMesh*);
 
 class FStaticMeshSocketEditor : public FAssetEditorToolkit
 {
 public:
 	FStaticMeshSocketEditor(const FLinearColor& InWorldCentricTabColorScale,
-							const TWeakObjectPtr<UStaticMesh>& InStaticMesh,
-							const TWeakObjectPtr<UStaticMeshComponent>& InStaticMeshComponent,
-							const TArray<TWeakObjectPtr<UStaticMeshSocket>>& InSelectedSockets,
-							const bool InMutlipleSelect,
-							const EViewModeIndex ViewMode);
+	                        const TWeakObjectPtr<UStaticMesh>& InStaticMesh,
+	                        const TWeakObjectPtr<UStaticMeshComponent>& InStaticMeshComponent,
+	                        const TArray<TWeakObjectPtr<UStaticMeshSocket>>& InSelectedSockets,
+	                        const bool InMutlipleSelect,
+	                        const EViewModeIndex ViewMode);
 
 	FStaticMeshSocketEditor(USeatMap* InSeatMap, UWorld* InWorld);
 
@@ -64,6 +75,8 @@ public:
 	virtual FText GetBaseToolkitName() const override;
 	virtual FString GetWorldCentricTabPrefix() const override;
 	void InitSocketEditor();
+	void SetStaticMesh(UStaticMesh* InStaticMesh);
+	UStaticMesh* GetStaticMesh() const;
 
 	virtual void RegisterTabSpawners(const TSharedRef<FTabManager>& InTabManager) override;
 
@@ -72,6 +85,8 @@ public:
 
 	static const FName CustomSocketEditorViewportTabId;
 	static const FName CustomSocketEditorStaticMeshPickerTabId;
+
+	FStaticMeshChanged OnStaticMeshChanged;
 private:
 	FLinearColor WorldCentricTabColorScale;
 	TWeakObjectPtr<UStaticMesh> StaticMesh;
@@ -81,4 +96,5 @@ private:
 	EViewModeIndex ViewMode = VMI_Lit;
 	UWorld* World = nullptr;
 	USeatMap* SeatMap = nullptr;
+	TSharedPtr<IStaticMeshEditor> StaticMeshEditor;
 };

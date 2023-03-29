@@ -27,6 +27,7 @@
 #include "Widgets/Text/SInlineEditableTextBlock.h"
 #include "Framework/Commands/GenericCommands.h"
 #include "SeatSocket/SeatSocket.h"
+#include "Windows/WindowsPlatformApplicationMisc.h"
 
 #define LOCTEXT_NAMESPACE "SSCSSocketManagerEditor"
 
@@ -168,23 +169,12 @@ private:
 
 void SCustomSocketManager::Construct(const FArguments& InArgs)
 {
-	StaticMeshEditorPtr = InArgs._StaticMeshEditorPtr;
-	SeatMap = InArgs._SeatMap;
+	StaticMeshSocketEditor = InArgs._StaticMeshSocketEditor;
 
 	OnSocketSelectionChanged = InArgs._OnSocketSelectionChanged;
 	SeatMap = InArgs._SeatMap;
 
-	TSharedPtr<IStaticMeshEditor> StaticMeshEditorPinned = StaticMeshEditorPtr.Pin();
-	if (!StaticMeshEditorPinned.IsValid())
-	{
-		return;
-	}
-
-	// Register a post undo function which keeps the socket manager list view consistent with the static mesh
-	StaticMeshEditorPinned->RegisterOnPostUndo(
-		IStaticMeshEditor::FOnPostUndo::CreateSP(this, &SCustomSocketManager::PostUndo));
-
-	StaticMesh = StaticMeshEditorPinned->GetStaticMesh();
+	StaticMeshSocketEditor->OnStaticMeshChanged.AddRaw(this, &SCustomSocketManager::SetStaticMesh);
 
 	FDetailsViewArgs Args;
 	Args.bHideSelectionTip = true;
@@ -216,6 +206,18 @@ void SCustomSocketManager::Construct(const FArguments& InArgs)
 				.BorderImage(FEditorStyle::GetBrush("ToolPanel.GroupBorder"))
 				[
 					SNew(SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					  .AutoHeight()
+					  .Padding(0, 0, 0, 4)
+					[
+						SNew(SButton)
+						.ButtonStyle(FEditorStyle::Get(), "FlatButton.Success")
+						.ForegroundColor(FLinearColor::White)
+						.Text(LOCTEXT("CopySeats", "Copy Seats"))
+						.OnClicked(this, &SCustomSocketManager::CopySeats_Execute)
+						.HAlign(HAlign_Center)
+					]
 
 					+ SVerticalBox::Slot()
 					  .AutoHeight()
@@ -306,12 +308,6 @@ void SCustomSocketManager::Construct(const FArguments& InArgs)
 
 SCustomSocketManager::~SCustomSocketManager()
 {
-	TSharedPtr<IStaticMeshEditor> StaticMeshEditorPinned = StaticMeshEditorPtr.Pin();
-	if (StaticMeshEditorPinned.IsValid())
-	{
-		StaticMeshEditorPinned->UnregisterOnPostUndo(this);
-	}
-
 	RemovePropertyChangeListenerFromSockets();
 }
 
@@ -368,10 +364,9 @@ TSharedRef<ITableRow> SCustomSocketManager::MakeWidgetFromOption(TSharedPtr<Sock
 
 void SCustomSocketManager::CreateSeatSocket()
 {
-	TSharedPtr<IStaticMeshEditor> StaticMeshEditorPinned = StaticMeshEditorPtr.Pin();
-	if (StaticMeshEditorPinned.IsValid())
+	if (StaticMeshSocketEditor)
 	{
-		UStaticMesh* CurrentStaticMesh = StaticMeshEditorPinned->GetStaticMesh();
+		UStaticMesh* CurrentStaticMesh = StaticMeshSocketEditor->GetStaticMesh();
 
 		const FScopedTransaction Transaction(LOCTEXT("CreateSocket", "Create Socket"));
 
@@ -413,17 +408,67 @@ void SCustomSocketManager::CreateSeatSocket()
 	}
 }
 
+void SCustomSocketManager::CopySeat()
+{
+	FSeats Seats = SeatMap->GetSeats(StaticMesh.Get());
+
+	FString Names;
+	FString Types;
+	FString Positions;
+	FString Rotations;
+	FString Postures;
+	FString Scopes;
+
+	for (const USeatSocket* Seat : Seats.Seats)
+	{
+		if (!Names.IsEmpty())
+			Names.Append(",");
+
+		Names.Append(Seat->Name.ToString());
+
+		if (!Types.IsEmpty())
+			Types.Append(",");
+
+		Types.Append(FString::FromInt(static_cast<int32>(Seat->SeatType)));
+
+		if (!Positions.IsEmpty())
+			Positions.Append(",");
+
+		Positions.Append(FString::Printf(TEXT("(%f,%f,%f)"), Seat->RelativeLocation.X, Seat->RelativeLocation.Y,
+		                                 Seat->RelativeLocation.Z));
+
+		if (!Rotations.IsEmpty())
+			Rotations.Append(",");
+
+		Rotations.Append(FString::Printf(TEXT("(%f,%f,%f)"),
+		                                 Seat->RelativeRotation.Pitch, Seat->RelativeRotation.Yaw,
+		                                 Seat->RelativeRotation.Roll));
+
+		if (!Postures.IsEmpty())
+			Postures.Append(",");
+
+		Postures.Append(FString::FromInt(static_cast<int32>(Seat->Posture)));
+
+		if (!Scopes.IsEmpty())
+			Scopes.Append(",");
+
+		Scopes.Append(FString::Printf(TEXT("(%f,%f,%f,%f)"), Seat->PitchScope * 0.5, Seat->PitchScope * -0.5,
+		                              Seat->YawScope * 0.5, Seat->YawScope * -0.5));
+	}
+
+	FString SeatString = Names + "\t" + Types + "\t" + Positions + "\t" + Rotations + "\t" + Postures + "\t" + Scopes;
+	FPlatformApplicationMisc::ClipboardCopy(*SeatString);
+}
+
 void SCustomSocketManager::DuplicateSelectedSocket()
 {
-	TSharedPtr<IStaticMeshEditor> StaticMeshEditorPinned = StaticMeshEditorPtr.Pin();
-
 	USeatSocket* SelectedSocket = GetSelectedSocket();
 
-	if (StaticMeshEditorPinned.IsValid() && SelectedSocket)
+	if (StaticMeshSocketEditor && SelectedSocket)
 	{
 		const FScopedTransaction Transaction(LOCTEXT("SocketManager_DuplicateSocket", "Duplicate Socket"));
 
-		UStaticMesh* CurrentStaticMesh = StaticMeshEditorPinned->GetStaticMesh();
+		UStaticMesh* CurrentStaticMesh = StaticMeshSocketEditor->GetStaticMesh();
 
 		USeatSocket* NewSocket = DuplicateObject(SelectedSocket, CurrentStaticMesh);
 
@@ -467,10 +512,9 @@ void SCustomSocketManager::DeleteSelectedSocket()
 	{
 		const FScopedTransaction Transaction(LOCTEXT("DeleteSocket", "Delete Socket"));
 
-		TSharedPtr<IStaticMeshEditor> StaticMeshEditorPinned = StaticMeshEditorPtr.Pin();
-		if (StaticMeshEditorPinned.IsValid())
+		if (StaticMeshSocketEditor)
 		{
-			UStaticMesh* CurrentStaticMesh = StaticMeshEditorPinned->GetStaticMesh();
+			UStaticMesh* CurrentStaticMesh = StaticMeshSocketEditor->GetStaticMesh();
 			SeatMap->PreEditChange(NULL);
 			USeatSocket* SelectedSocket = SocketListView->GetSelectedItems()[0]->Socket;
 			SelectedSocket->OnPropertyChanged().RemoveAll(this);
@@ -484,13 +528,10 @@ void SCustomSocketManager::DeleteSelectedSocket()
 
 void SCustomSocketManager::RefreshSocketList()
 {
-	// The static mesh might not be the same one we built the SocketListView with
-	// check it here and update it if necessary.
-	TSharedPtr<IStaticMeshEditor> StaticMeshEditorPinned = StaticMeshEditorPtr.Pin();
-	if (StaticMeshEditorPinned.IsValid())
+	if (StaticMeshSocketEditor)
 	{
 		bool bIsSameStaticMesh = true;
-		UStaticMesh* CurrentStaticMesh = StaticMeshEditorPinned->GetStaticMesh();
+		UStaticMesh* CurrentStaticMesh = StaticMeshSocketEditor->GetStaticMesh();
 		if (!StaticMesh.IsValid() || CurrentStaticMesh != StaticMesh.Get())
 		{
 			StaticMesh = CurrentStaticMesh;
@@ -521,7 +562,8 @@ void SCustomSocketManager::RefreshSocketList()
 			SocketDetailsView->SetObjects(ObjectList, true);
 		}
 
-		StaticMeshEditorPinned->RefreshViewport();
+		// TODO
+		// StaticMeshEditorPinned->RefreshViewport();
 	}
 	else
 	{
@@ -579,13 +621,20 @@ FReply SCustomSocketManager::CreateSeatSocket_Execute()
 	return FReply::Handled();
 }
 
+FReply SCustomSocketManager::CopySeats_Execute()
+{
+	CopySeat();
+
+	return FReply::Handled();
+}
+
 FText SCustomSocketManager::GetSocketHeaderText() const
 {
 	UStaticMesh* CurrentStaticMesh = nullptr;
-	TSharedPtr<IStaticMeshEditor> StaticMeshEditorPinned = StaticMeshEditorPtr.Pin();
-	if (StaticMeshEditorPinned.IsValid())
+
+	if (StaticMeshSocketEditor)
 	{
-		CurrentStaticMesh = StaticMeshEditorPinned->GetStaticMesh();
+		CurrentStaticMesh = StaticMeshSocketEditor->GetStaticMesh();
 	}
 	return FText::Format(
 		LOCTEXT("SocketHeader_TotalFmt", "{0} sockets"),
@@ -601,13 +650,14 @@ TSharedPtr<SWidget> SCustomSocketManager::OnContextMenuOpening()
 {
 	const bool bShouldCloseWindowAfterMenuSelection = true;
 
-	TSharedPtr<IStaticMeshEditor> StaticMeshEditorPinned = StaticMeshEditorPtr.Pin();
-	if (!StaticMeshEditorPinned.IsValid())
+	if (!StaticMeshSocketEditor)
 	{
 		return TSharedPtr<SWidget>();
 	}
 
-	FMenuBuilder MenuBuilder(bShouldCloseWindowAfterMenuSelection, StaticMeshEditorPinned->GetToolkitCommands());
+	// TODO
+	FMenuBuilder MenuBuilder(bShouldCloseWindowAfterMenuSelection,
+	                         TSharedPtr<const FUICommandList>()/*StaticMeshEditorPinned->GetToolkitCommands()*/);
 
 	{
 		MenuBuilder.BeginSection("BasicOperations");
@@ -640,10 +690,9 @@ void SCustomSocketManager::NotifyPostChange(const FPropertyChangedEvent& Propert
 
 void SCustomSocketManager::AddPropertyChangeListenerToSockets()
 {
-	TSharedPtr<IStaticMeshEditor> StaticMeshEditorPinned = StaticMeshEditorPtr.Pin();
-	if (StaticMeshEditorPinned.IsValid())
+	if (StaticMeshSocketEditor)
 	{
-		UStaticMesh* CurrentStaticMesh = StaticMeshEditorPinned->GetStaticMesh();
+		UStaticMesh* CurrentStaticMesh = StaticMeshSocketEditor->GetStaticMesh();
 		FSeats Seats = SeatMap->GetSeats(CurrentStaticMesh);
 		for (int32 i = 0; i < Seats.Seats.Num(); ++i)
 		{
@@ -655,10 +704,9 @@ void SCustomSocketManager::AddPropertyChangeListenerToSockets()
 
 void SCustomSocketManager::RemovePropertyChangeListenerFromSockets()
 {
-	TSharedPtr<IStaticMeshEditor> StaticMeshEditorPinned = StaticMeshEditorPtr.Pin();
-	if (StaticMeshEditorPinned.IsValid())
+	if (StaticMeshSocketEditor)
 	{
-		UStaticMesh* CurrentStaticMesh = StaticMeshEditorPinned->GetStaticMesh();
+		UStaticMesh* CurrentStaticMesh = StaticMeshSocketEditor->GetStaticMesh();
 		if (CurrentStaticMesh)
 		{
 			for (int32 i = 0; i < CurrentStaticMesh->Sockets.Num(); ++i)
@@ -689,8 +737,7 @@ void SCustomSocketManager::OnSocketPropertyChanged(const USeatSocket* Socket, co
 		}
 	}
 
-	TSharedPtr<IStaticMeshEditor> StaticMeshEditorPinned = StaticMeshEditorPtr.Pin();
-	if (!StaticMeshEditorPinned.IsValid())
+	if (!StaticMeshSocketEditor)
 	{
 		return;
 	}
@@ -698,7 +745,7 @@ void SCustomSocketManager::OnSocketPropertyChanged(const USeatSocket* Socket, co
 	if (ChangedPropertyName == RelativeRotationName || ChangedPropertyName == RelativeLocationName)
 	{
 		// If socket location or rotation is changed, update the position of any actors attached to it in instances of this mesh
-		UStaticMesh* CurrentStaticMesh = StaticMeshEditorPinned->GetStaticMesh();
+		UStaticMesh* CurrentStaticMesh = StaticMeshSocketEditor->GetStaticMesh();
 		if (CurrentStaticMesh != nullptr)
 		{
 			bool bUpdatedChild = false;
@@ -748,6 +795,11 @@ void SCustomSocketManager::OnItemScrolledIntoView(TSharedPtr<SocketListItem> InI
 		DeferredRenameRequestPinned->OnRenameRequested.ExecuteIfBound();
 		DeferredRenameRequest.Reset();
 	}
+}
+
+void SCustomSocketManager::SetStaticMesh(UStaticMesh* InStaticMesh)
+{
+	RefreshSocketList();
 }
 
 #undef LOCTEXT_NAMESPACE

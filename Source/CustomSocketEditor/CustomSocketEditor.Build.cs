@@ -43,7 +43,7 @@ public class CustomSocketEditor : ModuleRules
 				"CoreUObject",
 				"Engine",
 				"Slate",
-				"SlateCore", "EditorStyle"
+				"SlateCore", "EditorStyle", "PropertyEditor", "DeveloperSettings", "ApplicationCore"
 				// ... add private dependencies that you statically link with here ...	
 			}
 		);

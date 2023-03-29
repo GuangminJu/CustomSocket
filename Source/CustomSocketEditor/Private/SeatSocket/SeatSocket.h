@@ -88,15 +88,15 @@ public:
 	void RemoveSeat(UStaticMesh* InStaticMesh, USeatSocket* InSeatSocket);
 	FSeats& GetSeats(UStaticMesh* InStaticMesh);
 
+	virtual void AddAssetUserData(UAssetUserData* InUserData) override;
+	virtual UAssetUserData* GetAssetUserDataOfClass(TSubclassOf<UAssetUserData> InUserDataClass) override;
+	virtual const TArray<UAssetUserData*>* GetAssetUserDataArray() const override;
+	virtual void RemoveUserDataOfClass(TSubclassOf<UAssetUserData> InUserDataClass) override;
+
 	UPROPERTY()
 	TMap<UStaticMesh*, FSeats> SeatMap;
 
 	/** Array of user data stored with the asset */
 	UPROPERTY()
 	TArray<UAssetUserData*> AssetUserData;
-
-	virtual void AddAssetUserData(UAssetUserData* InUserData) override;
-	virtual UAssetUserData* GetAssetUserDataOfClass(TSubclassOf<UAssetUserData> InUserDataClass) override;
-	virtual const TArray<UAssetUserData*>* GetAssetUserDataArray() const override;
-	virtual void RemoveUserDataOfClass(TSubclassOf<UAssetUserData> InUserDataClass) override;
 };
